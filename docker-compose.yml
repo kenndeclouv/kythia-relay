@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  kythia-nexus:
+    build: .
+    container_name: kythia-nexus
+    ports:
+      - "8080:8080"  # WebSocket port
+      - "8081:8081"  # HTTP metrics/health port
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8080
+      - HTTP_PORT=8081
+      - CHANNEL_BUFFER_SIZE=500
+      - MAX_ROOM_SIZE=0
+      - MAX_MESSAGE_SIZE=1048576
+      - CONNECTION_TIMEOUT=60
+      - AUTH_ENABLED=false
+      - RATE_LIMIT_PER_SECOND=100
+      - METRICS_ENABLED=true
+      - RUST_LOG=info
+    restart: unless-stopped
+    networks:
+      - kythia-network
+
+networks:
+  kythia-network:
+    driver: bridge

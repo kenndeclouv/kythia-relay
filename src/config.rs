@@ -1,22 +1,211 @@
+use crate::errors::{NexusError, NexusResult};
 use std::env;
+use std::time::Duration;
 
+/// Application configuration
 pub struct Config {
+    /// Host address to bind to
     pub host: String,
+
+    /// Port to listen on for WebSocket connections
     pub port: u16,
+
+    /// Port for HTTP health/metrics endpoints
+    pub http_port: u16,
+
+    /// Channel buffer size for message passing
+    pub channel_buffer_size: usize,
+
+    /// Maximum number of clients per room (0 = unlimited)
+    pub max_room_size: usize,
+
+    /// Maximum message size in bytes
+    pub max_message_size: usize,
+
+    /// Connection timeout duration
+    pub connection_timeout: Duration,
+
+    /// Enable authentication
+    pub auth_enabled: bool,
+
+    /// Secret key for JWT signing (required if auth_enabled)
+    pub auth_secret: String,
+
+    /// Rate limit: messages per second per client
+    pub rate_limit_per_second: u32,
+
+    /// Enable metrics collection
+    pub metrics_enabled: bool,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            host: "0.0.0.0".to_string(),
+            port: 8080,
+            http_port: 8081,
+            channel_buffer_size: 500,
+            max_room_size: 0,              // unlimited
+            max_message_size: 1024 * 1024, // 1MB
+            connection_timeout: Duration::from_secs(60),
+            auth_enabled: false,
+            auth_secret: String::new(),
+            rate_limit_per_second: 100,
+            metrics_enabled: true,
+        }
+    }
 }
 
 impl Config {
-    pub fn load() -> Self {
-        let host = env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
-        let port = env::var("PORT")
-            .unwrap_or_else(|_| "8080".to_string())
-            .parse::<u16>()
-            .expect("PORT must be a number");
+    /// Load configuration from environment variables
+    pub fn load() -> NexusResult<Self> {
+        let mut config = Config::default();
 
-        Config { host, port }
+        // Load host
+        if let Ok(host) = env::var("HOST") {
+            config.host = host;
+        }
+
+        // Load WebSocket port
+        if let Ok(port_str) = env::var("PORT") {
+            config.port = port_str.parse::<u16>().map_err(|_| {
+                NexusError::Config(format!(
+                    "Invalid PORT value '{}': must be a number between 1 and 65535",
+                    port_str
+                ))
+            })?;
+        }
+
+        // Load HTTP port
+        if let Ok(http_port_str) = env::var("HTTP_PORT") {
+            config.http_port = http_port_str.parse::<u16>().map_err(|_| {
+                NexusError::Config(format!(
+                    "Invalid HTTP_PORT value '{}': must be a number between 1 and 65535",
+                    http_port_str
+                ))
+            })?;
+        }
+
+        // Load channel buffer size
+        if let Ok(buffer_str) = env::var("CHANNEL_BUFFER_SIZE") {
+            config.channel_buffer_size = buffer_str.parse::<usize>().map_err(|_| {
+                NexusError::Config(format!(
+                    "Invalid CHANNEL_BUFFER_SIZE value '{}': must be a positive number",
+                    buffer_str
+                ))
+            })?;
+
+            if config.channel_buffer_size == 0 {
+                return Err(NexusError::Config(
+                    "CHANNEL_BUFFER_SIZE must be greater than 0".to_string(),
+                ));
+            }
+        }
+
+        // Load max room size
+        if let Ok(max_room_str) = env::var("MAX_ROOM_SIZE") {
+            config.max_room_size = max_room_str.parse::<usize>().map_err(|_| {
+                NexusError::Config(format!(
+                    "Invalid MAX_ROOM_SIZE value '{}': must be a positive number",
+                    max_room_str
+                ))
+            })?;
+        }
+
+        // Load max message size
+        if let Ok(max_msg_str) = env::var("MAX_MESSAGE_SIZE") {
+            config.max_message_size = max_msg_str.parse::<usize>().map_err(|_| {
+                NexusError::Config(format!(
+                    "Invalid MAX_MESSAGE_SIZE value '{}': must be a positive number",
+                    max_msg_str
+                ))
+            })?;
+
+            if config.max_message_size == 0 {
+                return Err(NexusError::Config(
+                    "MAX_MESSAGE_SIZE must be greater than 0".to_string(),
+                ));
+            }
+        }
+
+        // Load connection timeout
+        if let Ok(timeout_str) = env::var("CONNECTION_TIMEOUT") {
+            let timeout_secs = timeout_str.parse::<u64>().map_err(|_| {
+                NexusError::Config(format!(
+                    "Invalid CONNECTION_TIMEOUT value '{}': must be a positive number",
+                    timeout_str
+                ))
+            })?;
+            config.connection_timeout = Duration::from_secs(timeout_secs);
+        }
+
+        // Load authentication settings
+        if let Ok(auth_enabled_str) = env::var("AUTH_ENABLED") {
+            config.auth_enabled =
+                auth_enabled_str.to_lowercase() == "true" || auth_enabled_str == "1";
+        }
+
+        if let Ok(secret) = env::var("AUTH_SECRET") {
+            config.auth_secret = secret;
+        }
+
+        // Validate auth configuration
+        if config.auth_enabled && config.auth_secret.is_empty() {
+            return Err(NexusError::Config(
+                "AUTH_SECRET must be set when AUTH_ENABLED is true".to_string(),
+            ));
+        }
+
+        if config.auth_enabled && config.auth_secret.len() < 32 {
+            return Err(NexusError::Config(
+                "AUTH_SECRET must be at least 32 characters for security".to_string(),
+            ));
+        }
+
+        // Load rate limit
+        if let Ok(rate_str) = env::var("RATE_LIMIT_PER_SECOND") {
+            config.rate_limit_per_second = rate_str.parse::<u32>().map_err(|_| {
+                NexusError::Config(format!(
+                    "Invalid RATE_LIMIT_PER_SECOND value '{}': must be a positive number",
+                    rate_str
+                ))
+            })?;
+        }
+
+        // Load metrics setting
+        if let Ok(metrics_str) = env::var("METRICS_ENABLED") {
+            config.metrics_enabled = metrics_str.to_lowercase() == "true" || metrics_str == "1";
+        }
+
+        Ok(config)
     }
 
+    /// Get the WebSocket server address
     pub fn addr(&self) -> String {
         format!("{}:{}", self.host, self.port)
+    }
+
+    /// Get the HTTP server address
+    pub fn http_addr(&self) -> String {
+        format!("{}:{}", self.host, self.http_port)
+    }
+
+    /// Validate the configuration
+    pub fn validate(&self) -> NexusResult<()> {
+        if self.port == 0 {
+            return Err(NexusError::Config("PORT cannot be 0".to_string()));
+        }
+
+        if self.http_port == 0 {
+            return Err(NexusError::Config("HTTP_PORT cannot be 0".to_string()));
+        }
+
+        if self.port == self.http_port {
+            return Err(NexusError::Config(
+                "PORT and HTTP_PORT must be different".to_string(),
+            ));
+        }
+
+        Ok(())
     }
 }
