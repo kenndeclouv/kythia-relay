@@ -47,8 +47,8 @@ Built with **Rust** and powered by **Tokio**, it ensures minimal latency and max
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/your-username/kythia-nexus-core.git
-   cd kythia-nexus-core
+   git clone https://github.com/your-username/kythia-relay.git
+   cd kythia-relay
    ```
 
 2. **Setup environment variables**:

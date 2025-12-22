@@ -1,5 +1,5 @@
 [package]
-name = "kythia-nexus-core"
+name = "kythia-relay"
 version = "0.1.0"
 edition = "2024"
 
