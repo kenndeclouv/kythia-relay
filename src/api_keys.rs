@@ -49,7 +49,7 @@ impl ApiKeyManager {
     pub fn generate_key() -> String {
         let mut rng = rand::thread_rng();
         let random_bytes: [u8; 32] = rng.r#gen();
-        format!("kn_{}", hex::encode(random_bytes))
+        format!("kythia-{}", hex::encode(random_bytes))
     }
 
     /// Hash an API key for storage
