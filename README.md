@@ -1,20 +1,6 @@
-<div align="center">
-  <img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Objects/Rocket.png" alt="Rocket" width="120" height="120" />
-  <h1>Kythia Nexus Core</h1>
-  <p><strong>A Production-Ready, High-Performance WebSocket Signaling Server built with Rust</strong></p>
-
-  <p>
-    <img src="https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white" alt="Rust" />
-    <img src="https://img.shields.io/badge/Tokio-000000?style=for-the-badge&logo=tokio&logoColor=white" alt="Tokio" />
-    <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License" />
-  </p>
-</div>
-
----
-
 ## 🌟 Overview
 
-**Kythia Nexus Core** is an enterprise-grade, production-ready WebSocket signaling server that forms the backbone of the Kythia ecosystem. It delivers exceptional performance, reliability, and scalability for real-time data broadcasting, optimized for audio/video streaming and multi-room communication.
+**Kythia RelayCore** is an enterprise-grade, production-ready WebSocket signaling server that forms the backbone of the Kythia ecosystem. It delivers exceptional performance, reliability, and scalability for real-time data broadcasting, optimized for audio/video streaming and multi-room communication.
 
 Built with **Rust** and powered by **Tokio**, it ensures minimal latency, maximum throughput, and memory safety while handling thousands of concurrent connections.
 
@@ -103,8 +89,8 @@ Built with **Rust** and powered by **Tokio**, it ensures minimal latency, maximu
 docker-compose up -d
 
 # Or build manually
-docker build -t kythia-nexus:latest .
-docker run -p 8080:8080 -p 8081:8081 --env-file .env kythia-nexus:latest
+docker build -t kythia-relay:latest .
+docker run -p 8080:8080 -p 8081:8081 --env-file .env kythia-relay:latest
 ```
 
 ## ⚙️ Configuration
@@ -348,6 +334,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ---
 
 <div align="center">
-  <p>Built with ❤️ by the Kythia Team</p>
+  <p>Built with ❤️ by the Kythia Labs</p>
   <p>⭐ Star us on GitHub if you find this useful!</p>
 </div>

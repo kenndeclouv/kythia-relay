@@ -1,9 +1,29 @@
 version: '3.8'
 
 services:
-  kythia-nexus:
+  mysql:
+    image: mysql:8.0
+    container_name: kythia-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: kythia_root_password
+      MYSQL_DATABASE: kythia
+      MYSQL_USER: kythia
+      MYSQL_PASSWORD: kythia_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - kythia-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kythia-relay:
     build: .
-    container_name: kythia-nexus
+    container_name: kythia-relay
     ports:
       - "8080:8080"  # WebSocket port
       - "8081:8081"  # HTTP metrics/health port
@@ -15,13 +35,24 @@ services:
       - MAX_ROOM_SIZE=0
       - MAX_MESSAGE_SIZE=1048576
       - CONNECTION_TIMEOUT=60
-      - AUTH_ENABLED=false
+      - AUTH_ENABLED=true
       - RATE_LIMIT_PER_SECOND=100
       - METRICS_ENABLED=true
       - RUST_LOG=info
+      - DATABASE_URL=mysql://kythia:kythia_password@mysql:3306/kythia
+      - MASTER_KEY_FILE=/app/.master_key
+    volumes:
+      - ./data:/app/data
+      - ./.master_key:/app/.master_key
+    depends_on:
+      mysql:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - kythia-network
+
+volumes:
+  mysql_data:
 
 networks:
   kythia-network:

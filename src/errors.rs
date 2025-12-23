@@ -1,21 +1,25 @@
 use std::fmt;
 
-/// Custom error types for Kythia Nexus Core
+/// Custom error types for Kythia RelayCore
 #[derive(Debug)]
-pub enum NexusError {
+pub enum KythiaError {
     /// Configuration errors
     Config(String),
 
     /// WebSocket protocol errors
+    #[allow(dead_code)]
     WebSocket(String),
 
     /// Message protocol errors
+    #[allow(dead_code)]
     Protocol(String),
 
     /// Authentication errors
+    #[allow(dead_code)]
     Auth(String),
 
     /// Rate limiting errors
+    #[allow(dead_code)]
     RateLimit(String),
 
     /// IO errors
@@ -28,48 +32,48 @@ pub enum NexusError {
     Other(String),
 }
 
-impl fmt::Display for NexusError {
+impl fmt::Display for KythiaError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            NexusError::Config(msg) => write!(f, "Configuration error: {}", msg),
-            NexusError::WebSocket(msg) => write!(f, "WebSocket error: {}", msg),
-            NexusError::Protocol(msg) => write!(f, "Protocol error: {}", msg),
-            NexusError::Auth(msg) => write!(f, "Authentication error: {}", msg),
-            NexusError::RateLimit(msg) => write!(f, "Rate limit error: {}", msg),
-            NexusError::Io(err) => write!(f, "IO error: {}", err),
-            NexusError::Json(err) => write!(f, "JSON error: {}", err),
-            NexusError::Other(msg) => write!(f, "Error: {}", msg),
+            KythiaError::Config(msg) => write!(f, "Configuration error: {}", msg),
+            KythiaError::WebSocket(msg) => write!(f, "WebSocket error: {}", msg),
+            KythiaError::Protocol(msg) => write!(f, "Protocol error: {}", msg),
+            KythiaError::Auth(msg) => write!(f, "Authentication error: {}", msg),
+            KythiaError::RateLimit(msg) => write!(f, "Rate limit error: {}", msg),
+            KythiaError::Io(err) => write!(f, "IO error: {}", err),
+            KythiaError::Json(err) => write!(f, "JSON error: {}", err),
+            KythiaError::Other(msg) => write!(f, "Error: {}", msg),
         }
     }
 }
 
-impl std::error::Error for NexusError {
+impl std::error::Error for KythiaError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            NexusError::Io(err) => Some(err),
-            NexusError::Json(err) => Some(err),
+            KythiaError::Io(err) => Some(err),
+            KythiaError::Json(err) => Some(err),
             _ => None,
         }
     }
 }
 
-impl From<std::io::Error> for NexusError {
+impl From<std::io::Error> for KythiaError {
     fn from(err: std::io::Error) -> Self {
-        NexusError::Io(err)
+        KythiaError::Io(err)
     }
 }
 
-impl From<serde_json::Error> for NexusError {
+impl From<serde_json::Error> for KythiaError {
     fn from(err: serde_json::Error) -> Self {
-        NexusError::Json(err)
+        KythiaError::Json(err)
     }
 }
 
-impl From<std::num::ParseIntError> for NexusError {
+impl From<std::num::ParseIntError> for KythiaError {
     fn from(err: std::num::ParseIntError) -> Self {
-        NexusError::Config(format!("Failed to parse integer: {}", err))
+        KythiaError::Config(format!("Failed to parse integer: {}", err))
     }
 }
 
-/// Result type alias for Kythia Nexus Core operations
-pub type NexusResult<T> = Result<T, NexusError>;
+/// Result type alias for Kythia RelayCore operations
+pub type NexusResult<T> = Result<T, KythiaError>;

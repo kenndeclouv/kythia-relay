@@ -1,6 +1,8 @@
 // Module declarations
+mod api_keys;
 mod auth;
 mod config;
+mod db;
 mod errors;
 mod handler;
 mod http;
@@ -10,8 +12,11 @@ mod shutdown;
 mod state;
 mod types;
 
+use api_keys::ApiKeyManager;
 use config::Config;
+use db::Database;
 use metrics::MetricsCollector;
+use std::fs;
 use tokio::net::TcpListener;
 
 #[tokio::main]
@@ -41,6 +46,55 @@ async fn main() {
     let http_addr = config.http_addr();
     let http_addr_display = http_addr.replace("0.0.0.0", "localhost");
 
+    // Initialize database
+    log::info!("🔌 Connecting to database...");
+    let database = match Database::new(&config.database_url).await {
+        Ok(db) => {
+            log::info!("✅ Database connected successfully");
+            db
+        }
+        Err(e) => {
+            log::error!("❌ Failed to connect to database: {}", e);
+            log::error!("   Make sure MySQL is running and DATABASE_URL is correct");
+            std::process::exit(1);
+        }
+    };
+
+    // Run database migrations
+    if let Err(e) = database.migrate().await {
+        log::error!("❌ Database migration failed: {}", e);
+        std::process::exit(1);
+    }
+
+    // Initialize API Key Manager
+    let api_key_manager = ApiKeyManager::new(database.clone());
+
+    // Bootstrap master key if needed
+    match api_key_manager.bootstrap_master_key().await {
+        Ok(Some(master_key)) => {
+            log::warn!("🔑 NEW MASTER KEY GENERATED!");
+            log::warn!("   Master Key: {}", master_key);
+            log::warn!("   Saving to: {}", config.master_key_file);
+
+            // Save to file
+            if let Err(e) = fs::write(&config.master_key_file, &master_key) {
+                log::error!("❌ Failed to save master key: {}", e);
+                log::warn!("   Please save this key manually: {}", master_key);
+            } else {
+                log::info!("✅ Master key saved to {}", config.master_key_file);
+            }
+
+            log::warn!("   ⚠️  IMPORTANT: Save this key securely! It will not be shown again.");
+        }
+        Ok(None) => {
+            log::info!("🔑 Master key already exists");
+        }
+        Err(e) => {
+            log::error!("❌ Failed to bootstrap master key: {}", e);
+            std::process::exit(1);
+        }
+    }
+
     // Initialize metrics collector
     let metrics = if config.metrics_enabled {
         MetricsCollector::new()
@@ -48,11 +102,12 @@ async fn main() {
         MetricsCollector::new() // Still create it, but won't be exposed if disabled
     };
 
-    // Start HTTP server for health and metrics
+    // Start HTTP server for health, metrics, and API management
     if config.metrics_enabled {
         let http_metrics = metrics.clone();
+        let http_api_manager = Some(api_key_manager.clone());
         tokio::spawn(async move {
-            http::start_http_server(http_addr, http_metrics).await;
+            http::start_http_server(http_addr, http_metrics, http_api_manager).await;
         });
     }
 
@@ -65,7 +120,7 @@ async fn main() {
         }
     };
 
-    log::info!("🚀 Kythia Nexus Core listening on: {}", ws_addr);
+    log::info!("🚀 Kythia RelayCore listening on: {}", ws_addr);
     if config.metrics_enabled {
         log::info!(
             "📊 Metrics available at: http://{}/metrics",

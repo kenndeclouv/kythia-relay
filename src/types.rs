@@ -8,9 +8,11 @@ use tokio_tungstenite::tungstenite::Message;
 pub type Tx = mpsc::Sender<Message>;
 
 /// Type-safe wrapper for room identifiers
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct RoomId(String);
 
+#[allow(dead_code)]
 impl RoomId {
     /// Create a new RoomId
     pub fn new(id: String) -> Self {

@@ -1,4 +1,4 @@
-use crate::errors::{NexusError, NexusResult};
+use crate::errors::{KythiaError, NexusResult};
 use std::env;
 use std::time::Duration;
 
@@ -36,6 +36,12 @@ pub struct Config {
 
     /// Enable metrics collection
     pub metrics_enabled: bool,
+
+    /// Database URL for MySQL
+    pub database_url: String,
+
+    /// Path to master key file
+    pub master_key_file: String,
 }
 
 impl Default for Config {
@@ -52,6 +58,8 @@ impl Default for Config {
             auth_secret: String::new(),
             rate_limit_per_second: 100,
             metrics_enabled: true,
+            database_url: "mysql://kythia:kythia_password@localhost:3306/kythia".to_string(),
+            master_key_file: "./.master_key".to_string(),
         }
     }
 }
@@ -69,7 +77,7 @@ impl Config {
         // Load WebSocket port
         if let Ok(port_str) = env::var("PORT") {
             config.port = port_str.parse::<u16>().map_err(|_| {
-                NexusError::Config(format!(
+                KythiaError::Config(format!(
                     "Invalid PORT value '{}': must be a number between 1 and 65535",
                     port_str
                 ))
@@ -79,7 +87,7 @@ impl Config {
         // Load HTTP port
         if let Ok(http_port_str) = env::var("HTTP_PORT") {
             config.http_port = http_port_str.parse::<u16>().map_err(|_| {
-                NexusError::Config(format!(
+                KythiaError::Config(format!(
                     "Invalid HTTP_PORT value '{}': must be a number between 1 and 65535",
                     http_port_str
                 ))
@@ -89,14 +97,14 @@ impl Config {
         // Load channel buffer size
         if let Ok(buffer_str) = env::var("CHANNEL_BUFFER_SIZE") {
             config.channel_buffer_size = buffer_str.parse::<usize>().map_err(|_| {
-                NexusError::Config(format!(
+                KythiaError::Config(format!(
                     "Invalid CHANNEL_BUFFER_SIZE value '{}': must be a positive number",
                     buffer_str
                 ))
             })?;
 
             if config.channel_buffer_size == 0 {
-                return Err(NexusError::Config(
+                return Err(KythiaError::Config(
                     "CHANNEL_BUFFER_SIZE must be greater than 0".to_string(),
                 ));
             }
@@ -105,7 +113,7 @@ impl Config {
         // Load max room size
         if let Ok(max_room_str) = env::var("MAX_ROOM_SIZE") {
             config.max_room_size = max_room_str.parse::<usize>().map_err(|_| {
-                NexusError::Config(format!(
+                KythiaError::Config(format!(
                     "Invalid MAX_ROOM_SIZE value '{}': must be a positive number",
                     max_room_str
                 ))
@@ -115,14 +123,14 @@ impl Config {
         // Load max message size
         if let Ok(max_msg_str) = env::var("MAX_MESSAGE_SIZE") {
             config.max_message_size = max_msg_str.parse::<usize>().map_err(|_| {
-                NexusError::Config(format!(
+                KythiaError::Config(format!(
                     "Invalid MAX_MESSAGE_SIZE value '{}': must be a positive number",
                     max_msg_str
                 ))
             })?;
 
             if config.max_message_size == 0 {
-                return Err(NexusError::Config(
+                return Err(KythiaError::Config(
                     "MAX_MESSAGE_SIZE must be greater than 0".to_string(),
                 ));
             }
@@ -131,7 +139,7 @@ impl Config {
         // Load connection timeout
         if let Ok(timeout_str) = env::var("CONNECTION_TIMEOUT") {
             let timeout_secs = timeout_str.parse::<u64>().map_err(|_| {
-                NexusError::Config(format!(
+                KythiaError::Config(format!(
                     "Invalid CONNECTION_TIMEOUT value '{}': must be a positive number",
                     timeout_str
                 ))
@@ -151,21 +159,21 @@ impl Config {
 
         // Validate auth configuration
         if config.auth_enabled && config.auth_secret.is_empty() {
-            return Err(NexusError::Config(
+            return Err(KythiaError::Config(
                 "AUTH_SECRET must be set when AUTH_ENABLED is true".to_string(),
             ));
         }
 
-        if config.auth_enabled && config.auth_secret.len() < 32 {
-            return Err(NexusError::Config(
-                "AUTH_SECRET must be at least 32 characters for security".to_string(),
+        if config.auth_enabled && config.auth_secret.len() < 16 {
+            return Err(KythiaError::Config(
+                "AUTH_SECRET must be at least 16 characters for security".to_string(),
             ));
         }
 
         // Load rate limit
         if let Ok(rate_str) = env::var("RATE_LIMIT_PER_SECOND") {
             config.rate_limit_per_second = rate_str.parse::<u32>().map_err(|_| {
-                NexusError::Config(format!(
+                KythiaError::Config(format!(
                     "Invalid RATE_LIMIT_PER_SECOND value '{}': must be a positive number",
                     rate_str
                 ))
@@ -175,6 +183,16 @@ impl Config {
         // Load metrics setting
         if let Ok(metrics_str) = env::var("METRICS_ENABLED") {
             config.metrics_enabled = metrics_str.to_lowercase() == "true" || metrics_str == "1";
+        }
+
+        // Load database URL
+        if let Ok(db_url) = env::var("DATABASE_URL") {
+            config.database_url = db_url;
+        }
+
+        // Load master key file path
+        if let Ok(key_file) = env::var("MASTER_KEY_FILE") {
+            config.master_key_file = key_file;
         }
 
         Ok(config)
@@ -193,15 +211,15 @@ impl Config {
     /// Validate the configuration
     pub fn validate(&self) -> NexusResult<()> {
         if self.port == 0 {
-            return Err(NexusError::Config("PORT cannot be 0".to_string()));
+            return Err(KythiaError::Config("PORT cannot be 0".to_string()));
         }
 
         if self.http_port == 0 {
-            return Err(NexusError::Config("HTTP_PORT cannot be 0".to_string()));
+            return Err(KythiaError::Config("HTTP_PORT cannot be 0".to_string()));
         }
 
         if self.port == self.http_port {
-            return Err(NexusError::Config(
+            return Err(KythiaError::Config(
                 "PORT and HTTP_PORT must be different".to_string(),
             ));
         }

@@ -1,9 +1,10 @@
-use crate::errors::{NexusError, NexusResult};
+use crate::errors::{KythiaError, NexusResult};
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// JWT Claims structure
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
     /// Subject (user ID or identifier)
@@ -19,6 +20,7 @@ pub struct Claims {
     pub rooms: Option<Vec<String>>,
 }
 
+#[allow(dead_code)]
 impl Claims {
     /// Create new claims with default expiration (24 hours)
     pub fn new(subject: String) -> Self {
@@ -59,11 +61,13 @@ impl Claims {
 }
 
 /// Authentication manager
+#[allow(dead_code)]
 pub struct AuthManager {
     secret: String,
     enabled: bool,
 }
 
+#[allow(dead_code)]
 impl AuthManager {
     /// Create a new authentication manager
     pub fn new(secret: String, enabled: bool) -> Self {
@@ -78,7 +82,7 @@ impl AuthManager {
     /// Generate a JWT token
     pub fn generate_token(&self, claims: &Claims) -> NexusResult<String> {
         if !self.enabled {
-            return Err(NexusError::Auth(
+            return Err(KythiaError::Auth(
                 "Authentication is not enabled".to_string(),
             ));
         }
@@ -88,7 +92,7 @@ impl AuthManager {
             claims,
             &EncodingKey::from_secret(self.secret.as_bytes()),
         )
-        .map_err(|e| NexusError::Auth(format!("Failed to generate token: {}", e)))
+        .map_err(|e| KythiaError::Auth(format!("Failed to generate token: {}", e)))
     }
 
     /// Validate a JWT token and return claims
@@ -104,7 +108,7 @@ impl AuthManager {
             &Validation::default(),
         )
         .map(|data| data.claims)
-        .map_err(|e| NexusError::Auth(format!("Invalid token: {}", e)))
+        .map_err(|e| KythiaError::Auth(format!("Invalid token: {}", e)))
     }
 
     /// Validate API key (simple string comparison)
@@ -118,7 +122,7 @@ impl AuthManager {
         if api_key == self.secret {
             Ok(())
         } else {
-            Err(NexusError::Auth("Invalid API key".to_string()))
+            Err(KythiaError::Auth("Invalid API key".to_string()))
         }
     }
 

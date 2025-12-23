@@ -51,6 +51,7 @@ pub struct MetricsSnapshot {
     pub bytes_received: u64,
 }
 
+#[allow(dead_code)]
 impl MetricsCollector {
     /// Create a new metrics collector
     pub fn new() -> Self {

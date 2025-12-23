@@ -1,4 +1,4 @@
-use crate::errors::{NexusError, NexusResult};
+use crate::errors::{KythiaError, NexusResult};
 use dashmap::DashMap;
 use governor::{DefaultDirectRateLimiter, Quota, RateLimiter};
 use std::net::SocketAddr;
@@ -6,11 +6,13 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 
 /// Rate limiter for individual clients
+#[allow(dead_code)]
 pub struct ClientRateLimiter {
     limiters: Arc<DashMap<SocketAddr, DefaultDirectRateLimiter>>,
     quota: Quota,
 }
 
+#[allow(dead_code)]
 impl ClientRateLimiter {
     /// Create a new rate limiter with messages per second limit
     pub fn new(messages_per_second: u32) -> Self {
@@ -34,7 +36,7 @@ impl ClientRateLimiter {
 
         match limiter.check() {
             Ok(_) => Ok(()),
-            Err(_) => Err(NexusError::RateLimit(format!(
+            Err(_) => Err(KythiaError::RateLimit(format!(
                 "Client {} is rate limited",
                 addr
             ))),
@@ -60,10 +62,12 @@ impl ClientRateLimiter {
 }
 
 /// Message size validator
+#[allow(dead_code)]
 pub struct MessageValidator {
     max_size: usize,
 }
 
+#[allow(dead_code)]
 impl MessageValidator {
     /// Create a new message validator
     pub fn new(max_size: usize) -> Self {
@@ -73,7 +77,7 @@ impl MessageValidator {
     /// Validate message size
     pub fn validate_size(&self, data: &[u8]) -> NexusResult<()> {
         if data.len() > self.max_size {
-            Err(NexusError::Protocol(format!(
+            Err(KythiaError::Protocol(format!(
                 "Message size {} exceeds maximum allowed size {}",
                 data.len(),
                 self.max_size
