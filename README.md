@@ -50,84 +50,72 @@ Built with **Rust** and powered by **Tokio**, it ensures minimal latency, maximu
 - **Rate Limiting**: [Governor](https://github.com/boinkor-net/governor)
 - **State Management**: [DashMap](https://github.com/xacrimon/dashmap)
 
+## 📚 Documentation
+
+### For Beginners
+**[📖 Setup Guide (SETUP.md)](SETUP.md)** - Start here if you're new!
+- Step-by-step installation instructions
+- Configuration walkthrough with explanations
+- Testing your setup with examples
+- Common issues and troubleshooting
+- Quick start with Docker
+
+### For Advanced Users
+**[🏗️ Architecture Guide (ARCHITECTURE.md)](ARCHITECTURE.md)** - Deep technical documentation
+- Complete system architecture and design
+- Component breakdown and data flow
+- WebSocket protocol specification
+- REST API reference
+- Performance optimization techniques
+- Production deployment strategies
+- Security implementation details
+- Monitoring and observability
+
+### API Management
+**[🔑 API Keys Guide (API_KEYS.md)](API_KEYS.md)** - Authentication system
+- Creating and managing API keys
+- REST API endpoints
+- Integration examples
+- Security best practices
+
 ## 🚀 Getting Started
 
-### Prerequisites
+> **New to Kythia RelayCore?** Check out our comprehensive **[Setup Guide (SETUP.md)](SETUP.md)** for detailed installation instructions!
 
-- [Rust](https://www.rust-lang.org/tools/install) (latest stable version)
-- Cargo (comes with Rust)
-- Docker (optional, for containerized deployment)
-
-### Installation
-
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/your-username/kythia-relay.git
-   cd kythia-relay
-   ```
-
-2. **Setup environment variables**:
-   ```bash
-   cp .env.example .env
-   ```
-   Edit `.env` to customize your configuration.
-
-3. **Build and Run**:
-   ```bash
-   # Development
-   cargo run
-
-   # Production
-   cargo build --release
-   ./target/release/kythia-relay
-   ```
-
-### Docker Deployment
+### Quick Start with Docker
 
 ```bash
-# Build and run with Docker Compose
+# Clone and start
+git clone https://github.com/kenndeclouv/kythia-relay.git
+cd kythia-relay
 docker-compose up -d
 
-# Or build manually
-docker build -t kythia-relay:latest .
-docker run -p 8080:8080 -p 8081:8081 --env-file .env kythia-relay:latest
+# Get your master API key
+cat .master_key
 ```
+
+Your server is now running at `ws://localhost:8080` and `http://localhost:8081`!
+
+### Manual Installation
+
+For manual installation, advanced configuration, and troubleshooting, see **[SETUP.md](SETUP.md)**.
 
 ## ⚙️ Configuration
 
-The server can be configured using environment variables or a `.env` file:
+The server is configured using environment variables. Copy `.env.example` to `.env` and customize:
 
-### Server Settings
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `HOST` | The address to bind the WebSocket server to | `0.0.0.0` |
-| `PORT` | The port for WebSocket connections | `8080` |
-| `HTTP_PORT` | The port for HTTP health/metrics endpoints | `8081` |
-
-### Performance Settings
+### Essential Settings
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `CHANNEL_BUFFER_SIZE` | Buffer size for message channels | `500` |
-| `MAX_ROOM_SIZE` | Maximum clients per room (0 = unlimited) | `0` |
-| `MAX_MESSAGE_SIZE` | Maximum message size in bytes | `1048576` (1MB) |
-| `CONNECTION_TIMEOUT` | Connection timeout in seconds | `60` |
+| `HOST` | Server bind address | `0.0.0.0` |
+| `PORT` | WebSocket port | `8080` |
+| `HTTP_PORT` | HTTP API/metrics port | `8081` |
+| `DATABASE_URL` | MySQL connection string | See `.env.example` |
+| `AUTH_ENABLED` | Enable API key authentication | `false` |
+| `RUST_LOG` | Logging level | `info` |
 
-### Security Settings
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `AUTH_ENABLED` | Enable JWT authentication | `false` |
-| `AUTH_SECRET` | Secret key for JWT signing (min 32 chars) | - |
-| `RATE_LIMIT_PER_SECOND` | Messages per second per client | `100` |
-
-### Monitoring Settings
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `METRICS_ENABLED` | Enable metrics collection and HTTP endpoints | `true` |
-| `RUST_LOG` | Logging level (`info`, `debug`, `error`) | `info` |
+**For complete configuration options and performance tuning**, see **[SETUP.md - Configuration Guide](SETUP.md#configuration-guide)** and **[ARCHITECTURE.md - Performance Architecture](ARCHITECTURE.md#performance-architecture)**.
 
 ## 📡 WebSocket Protocol
 
