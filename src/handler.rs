@@ -1,6 +1,7 @@
 use crate::metrics::MetricsCollector;
+use crate::ratelimit::ClientRateLimiter;
 use crate::state::PeerMap;
-use crate::types::{ClientInfo, ResponseData, RoomInfo, SignalingMessage};
+use crate::types::{ClientInfo, PeerEntry, ResponseData, RoomInfo, SignalingMessage};
 use dashmap::DashMap;
 use futures_util::{SinkExt, StreamExt};
 use std::net::SocketAddr;
@@ -20,7 +21,9 @@ pub async fn handle_connection(
     stream: TcpStream,
     addr: SocketAddr,
     peers: PeerMap,
-    _metrics: MetricsCollector, // TODO: Add metric tracking throughout handler
+    metrics: MetricsCollector,
+    rate_limiter: ClientRateLimiter,
+    channel_buffer_size: usize,
 ) {
     let ws_stream = match accept_async(stream).await {
         Ok(ws) => ws,
@@ -31,13 +34,22 @@ pub async fn handle_connection(
     };
 
     let (mut write, mut read) = ws_stream.split();
-    let (tx, mut rx) = mpsc::channel(500);
+    let (tx, mut rx) = mpsc::channel(channel_buffer_size);
 
-    // Writer task (background)
+    // Writer task (background) — forwards from mpsc channel to WebSocket sink
+    let metrics_writer = metrics.clone();
     tokio::spawn(async move {
         while let Some(message) = rx.recv().await {
+            let byte_len = match &message {
+                Message::Text(t) => t.len(),
+                Message::Binary(b) => b.len(),
+                _ => 0,
+            };
             if write.send(message).await.is_err() {
                 break;
+            }
+            if byte_len > 0 {
+                metrics_writer.message_sent(byte_len);
             }
         }
     });
@@ -48,25 +60,56 @@ pub async fn handle_connection(
     while let Some(Ok(msg)) = read.next().await {
         match msg {
             Message::Text(text) => {
+                let byte_len = text.len();
+
+                // Check rate limit before processing
+                if let Err(_) = rate_limiter.check(addr) {
+                    metrics.message_dropped();
+                    send_json_response(
+                        &tx,
+                        &SignalingMessage::Error {
+                            message: "Rate limit exceeded".to_string(),
+                            code: Some("RATE_LIMITED".to_string()),
+                        },
+                    );
+                    continue;
+                }
+
+                metrics.message_received(byte_len);
+
                 if let Ok(action) = serde_json::from_str::<SignalingMessage>(&text) {
                     match action {
                         SignalingMessage::Join { room_id } => {
-                            // Leave current room if in one
+                            // Leave current room if in a different one
                             if let Some(old_room) = &current_room {
                                 if old_room != &room_id {
                                     if let Some(room) = peers.get(old_room) {
                                         room.remove(&addr);
+                                        if room.is_empty() {
+                                            drop(room); // release read guard before write
+                                            peers.remove(old_room);
+                                            metrics.room_deleted();
+                                            log::info!("Room {} is empty and deleted 🗑️", old_room);
+                                        }
                                     }
                                 }
                             }
 
-                            // Join new room
+                            // Check if this is a brand-new room
+                            let is_new_room = !peers.contains_key(&room_id);
+
+                            // Join new room — store PeerEntry (tx + joined_at)
                             peers
                                 .entry(room_id.clone())
                                 .or_insert_with(DashMap::new)
-                                .insert(addr, tx.clone());
+                                .insert(addr, PeerEntry::new(tx.clone()));
 
                             current_room = Some(room_id.clone());
+
+                            if is_new_room {
+                                metrics.room_created();
+                            }
+
                             log::info!("Client {} joined room {}", addr, room_id);
 
                             // Send success response
@@ -82,10 +125,22 @@ pub async fn handle_connection(
 
                         SignalingMessage::Leave => {
                             if let Some(room_id) = &current_room {
-                                if let Some(room) = peers.get(room_id) {
-                                    room.remove(&addr);
-                                    log::info!("Client {} left room {}", addr, room_id);
+                                let should_remove_room = {
+                                    if let Some(room) = peers.get(room_id) {
+                                        room.remove(&addr);
+                                        log::info!("Client {} left room {}", addr, room_id);
+                                        room.is_empty()
+                                    } else {
+                                        false
+                                    }
+                                };
+
+                                if should_remove_room {
+                                    peers.remove(room_id);
+                                    metrics.room_deleted();
+                                    log::info!("Room {} is empty and deleted 🗑️", room_id);
                                 }
+
                                 current_room = None;
 
                                 send_json_response(
@@ -116,7 +171,9 @@ pub async fn handle_connection(
                                 if let Some(room) = peers.get(room_id) {
                                     let clients: Vec<ClientInfo> = room
                                         .iter()
-                                        .map(|entry| ClientInfo::new(*entry.key()))
+                                        .map(|entry| {
+                                            ClientInfo::new(*entry.key(), entry.value().joined_at)
+                                        })
                                         .collect();
 
                                     send_json_response(
@@ -151,7 +208,7 @@ pub async fn handle_connection(
                                 .map(|entry| RoomInfo {
                                     room_id: entry.key().clone(),
                                     client_count: entry.value().len(),
-                                    created_at: 0,     // TODO: Track creation time
+                                    created_at: 0,     // TODO: Track creation time per room
                                     is_private: false, // TODO: Implement private rooms
                                 })
                                 .collect();
@@ -164,7 +221,7 @@ pub async fn handle_connection(
                             );
                         }
 
-                        // These are server->client messages, ignore if received
+                        // Server-to-client messages — ignore if received from client
                         SignalingMessage::Pong
                         | SignalingMessage::Error { .. }
                         | SignalingMessage::Response { .. } => {
@@ -175,14 +232,25 @@ pub async fn handle_connection(
             }
 
             Message::Binary(data) => {
+                // Rate-limit binary relay too
+                if let Err(_) = rate_limiter.check(addr) {
+                    metrics.message_dropped();
+                    continue;
+                }
+
+                let byte_len = data.len();
+                metrics.message_received(byte_len);
+
                 if let Some(room_id) = &current_room {
                     if let Some(room) = peers.get(room_id) {
                         for client in room.iter() {
                             let target_addr = client.key();
-                            let target_tx = client.value();
+                            let peer = client.value();
 
                             if target_addr != &addr {
-                                let _ = target_tx.try_send(Message::Binary(data.clone()));
+                                if peer.tx.try_send(Message::Binary(data.clone())).is_err() {
+                                    metrics.message_dropped();
+                                }
                             }
                         }
                     }
@@ -198,7 +266,10 @@ pub async fn handle_connection(
         }
     }
 
-    // Cleanup logic
+    // Cleanup on disconnect
+    metrics.connection_closed();
+    rate_limiter.remove(&addr);
+
     if let Some(room_id) = current_room {
         let should_remove_room = {
             if let Some(room) = peers.get(&room_id) {
@@ -212,6 +283,7 @@ pub async fn handle_connection(
 
         if should_remove_room {
             peers.remove(&room_id);
+            metrics.room_deleted();
             log::info!("Room {} is empty and deleted 🗑️", room_id);
         }
     }

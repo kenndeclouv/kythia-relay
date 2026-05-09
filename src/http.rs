@@ -28,21 +28,72 @@ pub async fn start_http_server(
     }
 }
 
+/// Read a full HTTP request, respecting Content-Length for body
+async fn read_http_request(stream: &mut TcpStream) -> Option<String> {
+    let mut buf = Vec::with_capacity(4096);
+    let mut tmp = [0u8; 4096];
+
+    // Read until we have the full headers (ending with \r\n\r\n)
+    loop {
+        match stream.read(&mut tmp).await {
+            Ok(0) => return None,
+            Ok(n) => {
+                buf.extend_from_slice(&tmp[..n]);
+                // Check if we've received the full headers
+                if buf.windows(4).any(|w| w == b"\r\n\r\n") {
+                    break;
+                }
+                // Safety: don't read more than 64KB headers
+                if buf.len() > 65536 {
+                    return None;
+                }
+            }
+            Err(_) => return None,
+        }
+    }
+
+    // Determine Content-Length and read body if needed
+    let header_end = buf
+        .windows(4)
+        .position(|w| w == b"\r\n\r\n")
+        .map(|p| p + 4)?;
+
+    let header_str = String::from_utf8_lossy(&buf[..header_end]);
+    let content_length = header_str
+        .lines()
+        .find(|l| l.to_lowercase().starts_with("content-length:"))
+        .and_then(|l| l.split(':').nth(1))
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .unwrap_or(0);
+
+    let body_so_far = buf.len() - header_end;
+
+    if content_length > body_so_far {
+        let remaining = content_length - body_so_far;
+        // Protect against absurdly large bodies (max 1MB)
+        if remaining > 1024 * 1024 {
+            return None;
+        }
+        let mut body_buf = vec![0u8; remaining];
+        if stream.read_exact(&mut body_buf).await.is_err() {
+            return None;
+        }
+        buf.extend_from_slice(&body_buf);
+    }
+
+    String::from_utf8(buf).ok()
+}
+
 /// Handle HTTP request
 async fn handle_http_request(
     mut stream: TcpStream,
     metrics: MetricsCollector,
     api_key_manager: Option<ApiKeyManager>,
 ) {
-    let mut buffer = vec![0; 4096];
-
-    let n = match stream.read(&mut buffer).await {
-        Ok(n) if n == 0 => return,
-        Ok(n) => n,
-        Err(_) => return,
+    let request = match read_http_request(&mut stream).await {
+        Some(r) => r,
+        None => return,
     };
-
-    let request = String::from_utf8_lossy(&buffer[..n]);
 
     // Parse request line
     let mut lines = request.lines();
@@ -66,6 +117,12 @@ async fn handle_http_request(
     // Extract Authorization header
     let auth_token = extract_auth_token(&request);
 
+    // Extract body (everything after the \r\n\r\n separator)
+    let body = request
+        .split_once("\r\n\r\n")
+        .map(|(_, b)| b.trim())
+        .unwrap_or("");
+
     // Route requests
     match (method, path) {
         ("GET", "/health") => {
@@ -88,7 +145,7 @@ async fn handle_http_request(
         }
         _ if path.starts_with("/api/v1/keys") => {
             if let Some(manager) = api_key_manager {
-                handle_api_keys_route(&mut stream, method, path, auth_token, manager).await;
+                handle_api_keys_route(&mut stream, method, path, auth_token, body, manager).await;
             } else {
                 send_response(
                     &mut stream,
@@ -111,6 +168,7 @@ async fn handle_api_keys_route(
     method: &str,
     path: &str,
     auth_token: Option<String>,
+    body: &str,
     manager: ApiKeyManager,
 ) {
     // Verify authorization
@@ -138,7 +196,7 @@ async fn handle_api_keys_route(
 
     // Route to specific handlers
     match (method, path) {
-        ("POST", "/api/v1/keys") => create_api_key(stream, manager).await,
+        ("POST", "/api/v1/keys") => create_api_key(stream, body, manager).await,
         ("GET", "/api/v1/keys") => list_api_keys(stream, manager).await,
         ("GET", path) if path.starts_with("/api/v1/keys/") => {
             if let Some(id_str) = path.strip_prefix("/api/v1/keys/") {
@@ -188,12 +246,22 @@ fn extract_key_id(path: &str) -> Option<i32> {
     }
 }
 
-/// Create a new API key
-async fn create_api_key(stream: &mut TcpStream, manager: ApiKeyManager) {
-    // For simplicity, create with default name (in production, parse request body)
-    let request = CreateApiKeyRequest {
-        name: "API Key".to_string(),
-        metadata: None,
+/// Create a new API key — parses request body for name/metadata
+async fn create_api_key(stream: &mut TcpStream, body: &str, manager: ApiKeyManager) {
+    // Parse JSON body, fall back to defaults if not provided
+    let request: CreateApiKeyRequest = if body.is_empty() {
+        CreateApiKeyRequest {
+            name: "API Key".to_string(),
+            metadata: None,
+        }
+    } else {
+        match serde_json::from_str(body) {
+            Ok(req) => req,
+            Err(e) => {
+                send_json_error(stream, 400, &format!("Invalid JSON body: {}", e)).await;
+                return;
+            }
+        }
     };
 
     match manager
@@ -317,7 +385,7 @@ fn extract_auth_token(request: &str) -> Option<String> {
 
 /// Send JSON error response
 async fn send_json_error(stream: &mut TcpStream, status: u16, message: &str) {
-    let json = format!(r#"{{"error":"{}"}}"#, message);
+    let json = serde_json::json!({"error": message}).to_string();
     send_response(stream, status, "application/json", &json).await;
 }
 

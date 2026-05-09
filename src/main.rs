@@ -16,6 +16,7 @@ use api_keys::ApiKeyManager;
 use config::Config;
 use db::Database;
 use metrics::MetricsCollector;
+use ratelimit::ClientRateLimiter;
 use std::fs;
 use tokio::net::TcpListener;
 
@@ -48,7 +49,7 @@ async fn main() {
 
     // Initialize database
     log::info!("🔌 Connecting to database...");
-    let database = match Database::new(&config.database_url).await {
+    let database = match Database::new(&config.database_url, config.db_max_connections).await {
         Ok(db) => {
             log::info!("✅ Database connected successfully");
             db
@@ -96,18 +97,15 @@ async fn main() {
     }
 
     // Initialize metrics collector
-    let metrics = if config.metrics_enabled {
-        MetricsCollector::new()
-    } else {
-        MetricsCollector::new() // Still create it, but won't be exposed if disabled
-    };
+    let metrics = MetricsCollector::new();
 
-    // Start HTTP server for health, metrics, and API management
-    if config.metrics_enabled {
+    // Always start HTTP server — it hosts both metrics AND API key management
+    {
         let http_metrics = metrics.clone();
         let http_api_manager = Some(api_key_manager.clone());
+        let http_addr_clone = http_addr.clone();
         tokio::spawn(async move {
-            http::start_http_server(http_addr, http_metrics, http_api_manager).await;
+            http::start_http_server(http_addr_clone, http_metrics, http_api_manager).await;
         });
     }
 
@@ -121,13 +119,8 @@ async fn main() {
     };
 
     log::info!("🚀 Kythia RelayCore listening on: {}", ws_addr);
-    if config.metrics_enabled {
-        log::info!(
-            "📊 Metrics available at: http://{}/metrics",
-            http_addr_display
-        );
-        log::info!("💚 Health check at: http://{}/health", http_addr_display);
-    }
+    log::info!("📊 Metrics available at: http://{}/metrics", http_addr_display);
+    log::info!("💚 Health check at: http://{}/health", http_addr_display);
     log::info!(
         "🔐 Authentication: {}",
         if config.auth_enabled {
@@ -136,9 +129,21 @@ async fn main() {
             "DISABLED"
         }
     );
+    log::info!(
+        "⚡ Rate limit: {} msg/s per client | Channel buffer: {} | DB pool: {}",
+        config.rate_limit_per_second,
+        config.channel_buffer_size,
+        config.db_max_connections
+    );
 
     // Initialize state
     let peers = state::init();
+
+    // Initialize rate limiter (shared across all connections)
+    let rate_limiter = ClientRateLimiter::new(config.rate_limit_per_second);
+
+    // Snapshot config values for use in the accept loop
+    let channel_buffer_size = config.channel_buffer_size;
 
     // Spawn shutdown listener
     let mut shutdown_handle = tokio::spawn(async move {
@@ -157,10 +162,19 @@ async fn main() {
 
                         let peers_clone = peers.clone();
                         let metrics_clone = metrics.clone();
+                        let rate_limiter_clone = rate_limiter.clone();
 
                         // Spawn handler for WebSocket connection
                         tokio::spawn(async move {
-                            handler::handle_connection(stream, addr, peers_clone, metrics_clone).await;
+                            handler::handle_connection(
+                                stream,
+                                addr,
+                                peers_clone,
+                                metrics_clone,
+                                rate_limiter_clone,
+                                channel_buffer_size,
+                            )
+                            .await;
                         });
                     }
                     Err(e) => {

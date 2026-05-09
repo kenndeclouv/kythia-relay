@@ -40,6 +40,9 @@ pub struct Config {
     /// Database URL for MySQL
     pub database_url: String,
 
+    /// Maximum database connection pool size
+    pub db_max_connections: u32,
+
     /// Path to master key file
     pub master_key_file: String,
 }
@@ -59,6 +62,7 @@ impl Default for Config {
             rate_limit_per_second: 100,
             metrics_enabled: true,
             database_url: "mysql://kythia:kythia_password@localhost:3306/kythia".to_string(),
+            db_max_connections: 10,
             master_key_file: "./.master_key".to_string(),
         }
     }
@@ -188,6 +192,21 @@ impl Config {
         // Load database URL
         if let Ok(db_url) = env::var("DATABASE_URL") {
             config.database_url = db_url;
+        }
+
+        // Load database pool size
+        if let Ok(pool_str) = env::var("DB_MAX_CONNECTIONS") {
+            config.db_max_connections = pool_str.parse::<u32>().map_err(|_| {
+                KythiaError::Config(format!(
+                    "Invalid DB_MAX_CONNECTIONS value '{}': must be a positive number",
+                    pool_str
+                ))
+            })?;
+            if config.db_max_connections == 0 {
+                return Err(KythiaError::Config(
+                    "DB_MAX_CONNECTIONS must be greater than 0".to_string(),
+                ));
+            }
         }
 
         // Load master key file path

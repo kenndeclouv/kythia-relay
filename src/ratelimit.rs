@@ -6,13 +6,12 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 
 /// Rate limiter for individual clients
-#[allow(dead_code)]
+#[derive(Clone)]
 pub struct ClientRateLimiter {
     limiters: Arc<DashMap<SocketAddr, DefaultDirectRateLimiter>>,
     quota: Quota,
 }
 
-#[allow(dead_code)]
 impl ClientRateLimiter {
     /// Create a new rate limiter with messages per second limit
     pub fn new(messages_per_second: u32) -> Self {
@@ -49,15 +48,9 @@ impl ClientRateLimiter {
     }
 
     /// Get the number of active limiters
+    #[allow(dead_code)]
     pub fn count(&self) -> usize {
         self.limiters.len()
-    }
-
-    /// Clean up inactive limiters (optional, for memory management)
-    pub fn cleanup_inactive(&self) {
-        // In a production system, you might want to implement
-        // a mechanism to remove limiters that haven't been used
-        // in a while to prevent memory buildup
     }
 }
 

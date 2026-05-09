@@ -1,5 +1,5 @@
 # Multi-stage build for minimal image size
-FROM rust:1.77-alpine AS builder
+FROM rust:1.85-alpine AS builder
 
 WORKDIR /app
 
@@ -12,8 +12,8 @@ COPY Cargo.toml Cargo.lock ./
 # Copy source code
 COPY src ./src
 
-# Build release binary
-RUN cargo build --release
+# Build release binary with native CPU optimizations
+RUN RUSTFLAGS="-C target-cpu=native" cargo build --release
 
 # Runtime stage
 FROM alpine:latest

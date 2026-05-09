@@ -7,6 +7,22 @@ use tokio_tungstenite::tungstenite::Message;
 /// Type alias for message sender channel
 pub type Tx = mpsc::Sender<Message>;
 
+/// Entry stored per peer in a room: sender channel + connection timestamp
+#[derive(Clone)]
+pub struct PeerEntry {
+    pub tx: Tx,
+    pub joined_at: i64,
+}
+
+impl PeerEntry {
+    pub fn new(tx: Tx) -> Self {
+        PeerEntry {
+            tx,
+            joined_at: chrono::Utc::now().timestamp(),
+        }
+    }
+}
+
 /// Type-safe wrapper for room identifiers
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -108,11 +124,11 @@ pub struct ClientInfo {
 }
 
 impl ClientInfo {
-    /// Create a new ClientInfo from SocketAddr
-    pub fn new(addr: SocketAddr) -> Self {
+    /// Create a new ClientInfo from SocketAddr and pre-computed join timestamp
+    pub fn new(addr: SocketAddr, joined_at: i64) -> Self {
         Self {
             id: format!("{}", addr),
-            joined_at: chrono::Utc::now().timestamp(),
+            joined_at,
         }
     }
 }

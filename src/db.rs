@@ -9,9 +9,9 @@ pub struct Database {
 
 impl Database {
     /// Create a new database connection
-    pub async fn new(database_url: &str) -> NexusResult<Self> {
+    pub async fn new(database_url: &str, max_connections: u32) -> NexusResult<Self> {
         let pool = MySqlPoolOptions::new()
-            .max_connections(10)
+            .max_connections(max_connections)
             .connect(database_url)
             .await
             .map_err(|e| KythiaError::Other(format!("Failed to connect to database: {}", e)))?;
